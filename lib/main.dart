@@ -1,8 +1,25 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'screens/host_screen.dart';
-import 'screens/client_screen.dart';
 
-void main() {
+import 'firebase/firebase_client_screen.dart';
+import 'firebase/firebase_host_screen.dart';
+import 'firebase_options.dart';
+import 'websocket/websocket_client_screen.dart';
+import 'websocket/websocket_host_screen.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    if (Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    }
+  } catch (e) {
+    debugPrint('Firebase init error: $e');
+  }
+
   runApp(const MirrorApp());
 }
 
@@ -51,7 +68,11 @@ class MainMenu extends StatelessWidget {
                 color: Colors.teal.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.cast_connected_rounded, size: 20, color: Colors.tealAccent),
+              child: const Icon(
+                Icons.cast_connected_rounded,
+                size: 20,
+                color: Colors.tealAccent,
+              ),
             ),
             const SizedBox(width: 10),
             const Text(
@@ -66,16 +87,14 @@ class MainMenu extends StatelessWidget {
           physics: const BouncingScrollPhysics(),
           padding: EdgeInsets.symmetric(
             horizontal: isSmall ? 16.0 : 24.0,
-            vertical: isSmall ? 16.0 : 28.0,
+            vertical: isSmall ? 16.0 : 24.0,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 8),
-
               // Header Branding Card
               Container(
-                padding: EdgeInsets.all(isSmall ? 20 : 28),
+                padding: EdgeInsets.all(isSmall ? 18 : 24),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
@@ -88,133 +107,189 @@ class MainMenu extends StatelessWidget {
                   borderRadius: BorderRadius.circular(24),
                   border: Border.all(color: const Color(0xFF334155)),
                   boxShadow: const [
-                    BoxShadow(color: Colors.black38, blurRadius: 16, offset: Offset(0, 6))
+                    BoxShadow(
+                      color: Colors.black38,
+                      blurRadius: 16,
+                      offset: Offset(0, 6),
+                    ),
                   ],
                 ),
                 child: Column(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(18),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
                         color: Colors.teal.withValues(alpha: 0.2),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.teal.withValues(alpha: 0.5), width: 1.5),
+                        border: Border.all(
+                          color: Colors.teal.withValues(alpha: 0.5),
+                          width: 1.5,
+                        ),
                         boxShadow: [
-                          BoxShadow(color: Colors.teal.withValues(alpha: 0.3), blurRadius: 16)
+                          BoxShadow(
+                            color: Colors.teal.withValues(alpha: 0.3),
+                            blurRadius: 16,
+                          ),
                         ],
                       ),
                       child: const Icon(
                         Icons.cast_for_education_rounded,
-                        size: 48,
+                        size: 42,
                         color: Colors.tealAccent,
                       ),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
                     Text(
                       'Interactive Device Mirror',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: isSmall ? 22 : 26,
+                        fontSize: isSmall ? 20 : 24,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Text(
-                      'Ultra low-latency screen broadcasting and bi-directional touch gesture mirroring over Wi-Fi.',
+                      'Choose between Local Wi-Fi (WebSocket) or Global Cloud (Firebase) for screen broadcasting and remote touch interactions.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: isSmall ? 12.5 : 14,
+                        fontSize: isSmall ? 12 : 13.5,
                         color: Colors.white70,
-                        height: 1.45,
+                        height: 1.4,
                       ),
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
+
+              // --- SECTION 1: WEBSOCKET LAN ---
               const Padding(
-                padding: EdgeInsets.only(left: 4.0, bottom: 12.0),
-                child: Text(
-                  'SELECT DEVICE ROLE',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white54,
-                    letterSpacing: 1.0,
-                  ),
+                padding: EdgeInsets.only(left: 4.0, bottom: 10.0),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.wifi_rounded,
+                      color: Colors.tealAccent,
+                      size: 16,
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'WEBSOCKET (LOCAL WI-FI)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.tealAccent,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ],
                 ),
               ),
 
-              // Host Mode Card
               _buildRoleCard(
                 context: context,
-                title: 'Start Host Broadcaster',
-                subtitle: 'Broadcast UI, Museum Map & receive real-time remote touch interactions.',
-                badgeText: 'Host / App A',
-                icon: Icons.desktop_windows_rounded,
-                accentColor: Colors.indigoAccent,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const HostScreen()),
-                  );
-                },
-              ),
-              const SizedBox(height: 16),
-
-              // Client Mode Card
-              _buildRoleCard(
-                context: context,
-                title: 'Connect as Client Receiver',
-                subtitle: 'Connect to Host IP, receive live screen stream & control host remotely.',
-                badgeText: 'Client / App B',
-                icon: Icons.phone_android_rounded,
+                title: 'WebSocket Host',
+                subtitle:
+                    'Broadcast screen over local Wi-Fi with ultra-low latency & remote touch input.',
+                badgeText: 'Host Server',
+                icon: Icons.wifi_tethering_rounded,
                 accentColor: Colors.tealAccent,
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const ClientScreen()),
+                    MaterialPageRoute(
+                      builder: (_) => const WebSocketHostScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+
+              _buildRoleCard(
+                context: context,
+                title: 'WebSocket Client',
+                subtitle:
+                    'Connect to Host IP to view live screen and send real-time touch gestures.',
+                badgeText: 'Client Receiver',
+                icon: Icons.devices_rounded,
+                accentColor: Colors.tealAccent,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const WebSocketClientScreen(),
+                    ),
                   );
                 },
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
 
-              // Network Info Footer
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFF334155)),
-                ),
+              // --- SECTION 2: FIREBASE CLOUD ---
+              const Padding(
+                padding: EdgeInsets.only(left: 4.0, bottom: 10.0),
                 child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.teal.withValues(alpha: 0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.wifi_rounded,
-                        size: 20,
-                        color: Colors.tealAccent,
-                      ),
+                    Icon(
+                      Icons.local_fire_department_rounded,
+                      color: Colors.orangeAccent,
+                      size: 16,
                     ),
-                    const SizedBox(width: 14),
-                    const Expanded(
-                      child: Text(
-                        'Ensure both devices are on the same Wi-Fi network for sub-50ms streaming performance.',
-                        style: TextStyle(fontSize: 12, color: Colors.white70, height: 1.35),
+                    SizedBox(width: 6),
+                    Text(
+                      'FIREBASE (GLOBAL CLOUD)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orangeAccent,
+                        letterSpacing: 1.0,
                       ),
                     ),
                   ],
                 ),
               ),
+
+              _buildRoleCard(
+                context: context,
+                title: 'Firebase Host',
+                subtitle:
+                    'Broadcast screen to cloud room (room_101) for global cross-network streaming.',
+                badgeText: 'Cloud Host',
+                icon: Icons.cloud_upload_rounded,
+                accentColor: Colors.orangeAccent,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const FirebaseHostScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 12),
+
+              _buildRoleCard(
+                context: context,
+                title: 'Firebase Client',
+                subtitle:
+                    'Connect via Room ID to view cloud broadcast from anywhere on the web or mobile.',
+                badgeText: 'Cloud Client',
+                icon: Icons.cloud_download_rounded,
+                accentColor: Colors.orangeAccent,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const FirebaseClientScreen(),
+                    ),
+                  );
+                },
+              ),
+
+              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -234,33 +309,35 @@ class MainMenu extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFF334155)),
         boxShadow: const [
-          BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4)),
+          BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 4)),
         ],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(18),
           splashColor: accentColor.withValues(alpha: 0.15),
           highlightColor: accentColor.withValues(alpha: 0.05),
           child: Padding(
-            padding: const EdgeInsets.all(20.0),
+            padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: accentColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: accentColor.withValues(alpha: 0.3)),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: accentColor.withValues(alpha: 0.3),
+                    ),
                   ),
-                  child: Icon(icon, size: 32, color: accentColor),
+                  child: Icon(icon, size: 28, color: accentColor),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -271,7 +348,7 @@ class MainMenu extends StatelessWidget {
                             child: Text(
                               title,
                               style: const TextStyle(
-                                fontSize: 16,
+                                fontSize: 15,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.white,
                               ),
@@ -301,11 +378,11 @@ class MainMenu extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Text(
                         subtitle,
                         style: const TextStyle(
-                          fontSize: 12,
+                          fontSize: 11.5,
                           color: Colors.white60,
                           height: 1.35,
                         ),
@@ -316,7 +393,7 @@ class MainMenu extends StatelessWidget {
                 const SizedBox(width: 8),
                 const Icon(
                   Icons.arrow_forward_ios_rounded,
-                  size: 16,
+                  size: 14,
                   color: Colors.white38,
                 ),
               ],

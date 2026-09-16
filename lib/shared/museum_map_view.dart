@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import '../models/museum_poi.dart';
+import 'museum_poi.dart';
 
 class MuseumMapView extends StatefulWidget {
   final List<MuseumPoi> pois;
@@ -42,7 +42,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
       curve: Curves.easeOutCubic,
     ));
 
-    // Listen to matrix changes to rebuild top-level callout overlay in sync with zoom/pan
+    // Rebuild top-level info callout overlay on matrix zoom/pan
     _transformationController.addListener(_onTransformationChanged);
   }
 
@@ -62,44 +62,57 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
   }
 
   void _selectPoi(MuseumPoi poi, Size viewportSize, double mapWidth, double mapHeight) {
+    if (_zoomAnimationController?.isAnimating == true) {
+      _zoomAnimationController!.stop();
+    }
     setState(() {
       _selectedPoi = poi;
-      _showSidePanel = false;
     });
-    _panelAnimationController.reverse();
     _zoomToPoi(poi, viewportSize, mapWidth, mapHeight);
   }
 
+  // Smooth camera panning that places ANY pin directly in the visible center of the screen
   void _zoomToPoi(MuseumPoi poi, Size viewportSize, double mapWidth, double mapHeight) {
     if (viewportSize.width == 0 || viewportSize.height == 0) return;
+
+    final double mapLeftOffset = (viewportSize.width - mapWidth) / 2;
+    final double mapTopOffset = (viewportSize.height - mapHeight) / 2;
 
     final pinX = poi.dx * mapWidth;
     final pinY = poi.dy * mapHeight;
 
     // Responsive target scale factor
-    final double targetScale = viewportSize.width < 500 ? 1.8 : 1.5;
+    final bool isTablet = viewportSize.width >= 600;
+    final double targetScale = isTablet ? 1.6 : (viewportSize.width < 500 ? 1.85 : 1.6);
 
-    // Calculate translation to position (pinX, pinY) near center of viewport
-    double translateX = (viewportSize.width / 2) - (pinX * targetScale);
-    double translateY = (viewportSize.height / 2) - (pinY * targetScale);
+    // Calculate dynamic horizontal center:
+    // If the side panel is open, center the pin in the remaining UNCOVERED left area of the screen
+    double targetScreenX = viewportSize.width / 2;
+    if (_showSidePanel) {
+      final double panelWidth = isTablet ? 380.0 : (viewportSize.width * 0.85);
+      final double visibleMapWidth = viewportSize.width - panelWidth;
+      targetScreenX = math.max(visibleMapWidth / 2, 70.0);
+    }
 
-    // Bound clamping so map does not float into void
-    final minTx = viewportSize.width - (mapWidth * targetScale);
-    final minTy = viewportSize.height - (mapHeight * targetScale);
+    final double targetScreenY = viewportSize.height * 0.44;
 
-    if (translateX > 0) translateX = 0;
-    if (translateX < minTx) translateX = minTx;
-    if (translateY > 0) translateY = 0;
-    if (translateY < minTy) translateY = minTy;
+    // Exact matrix translation to center the pin on screen
+    final double translateX = targetScreenX - mapLeftOffset - (pinX * targetScale);
+    final double translateY = targetScreenY - mapTopOffset - (pinY * targetScale);
 
     final endMatrix = Matrix4.identity()
+      // ignore: deprecated_member_use
       ..translate(translateX, translateY, 0.0)
+      // ignore: deprecated_member_use
       ..scale(targetScale, targetScale, 1.0);
 
     _animateMatrixTo(endMatrix);
   }
 
   void _resetZoom() {
+    if (_zoomAnimationController?.isAnimating == true) {
+      _zoomAnimationController!.stop();
+    }
     setState(() {
       _selectedPoi = null;
       _showSidePanel = false;
@@ -110,11 +123,14 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
 
   void _animateMatrixTo(Matrix4 targetMatrix) {
     final Matrix4 startMatrix = _transformationController.value;
+    if (_zoomAnimationController?.isAnimating == true) {
+      _zoomAnimationController!.stop();
+    }
     _zoomAnimationController?.dispose();
 
     _zoomAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 450),
+      duration: const Duration(milliseconds: 220),
     );
 
     _zoomAnimation = Matrix4Tween(
@@ -122,37 +138,50 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
       end: targetMatrix,
     ).animate(CurvedAnimation(
       parent: _zoomAnimationController!,
-      curve: Curves.easeOutCubic,
+      curve: Curves.fastOutSlowIn,
     ));
 
     _zoomAnimation!.addListener(() {
-      _transformationController.value = _zoomAnimation!.value;
+      if (mounted) {
+        // Updating value automatically notifies _transformationController listeners (_onTransformationChanged) once
+        _transformationController.value = _zoomAnimation!.value;
+      }
     });
 
     _zoomAnimationController!.forward();
   }
 
-  void _openSidePanel() {
+  void _openSidePanel(Size viewportSize, double mapWidth, double mapHeight) {
     setState(() {
       _showSidePanel = true;
     });
     _panelAnimationController.forward();
+    if (_selectedPoi != null) {
+      _zoomToPoi(_selectedPoi!, viewportSize, mapWidth, mapHeight);
+    }
   }
 
-  void _closeSidePanel() {
+  void _closeSidePanel(Size viewportSize, double mapWidth, double mapHeight) {
     _panelAnimationController.reverse().then((_) {
       if (mounted) {
         setState(() {
           _showSidePanel = false;
         });
+        if (_selectedPoi != null) {
+          _zoomToPoi(_selectedPoi!, viewportSize, mapWidth, mapHeight);
+        }
       }
     });
   }
 
-  void _dismissPoi() {
-    _closeSidePanel();
-    setState(() {
-      _selectedPoi = null;
+  void _dismissPoi(Size viewportSize, double mapWidth, double mapHeight) {
+    _panelAnimationController.reverse().then((_) {
+      if (mounted) {
+        setState(() {
+          _showSidePanel = false;
+          _selectedPoi = null;
+        });
+      }
     });
   }
 
@@ -162,8 +191,8 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
       builder: (context, constraints) {
         final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
 
-        // Responsive Map Dimensions: Entire map fits in viewport by default
-        const double imageAspectRatio = 675 / 1200; // Aspect ratio of museum_map.jpg
+        // Entire map fits in viewport by default
+        const double imageAspectRatio = 675 / 1200;
         double mapWidth = viewportSize.width;
         double mapHeight = mapWidth / imageAspectRatio;
 
@@ -172,9 +201,16 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
           mapWidth = mapHeight * imageAspectRatio;
         }
 
+        // Sort POIs so selected pin is rendered LAST (highest z-index & frontmost touch target)
+        final sortedPois = List<MuseumPoi>.from(widget.pois);
+        if (_selectedPoi != null) {
+          sortedPois.removeWhere((p) => p.id == _selectedPoi!.id);
+          sortedPois.add(_selectedPoi!);
+        }
+
         return Stack(
           children: [
-            // Center the zoomable map canvas
+            // Center zoomable map canvas
             Center(
               child: SizedBox(
                 width: mapWidth,
@@ -184,7 +220,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                   minScale: 1.0,
                   maxScale: 4.0,
                   clipBehavior: Clip.none,
-                  boundaryMargin: const EdgeInsets.all(300),
+                  boundaryMargin: const EdgeInsets.all(1200),
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
@@ -202,18 +238,22 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                         ),
                       ),
 
-                      // Hotspot Pins on Map
-                      ...widget.pois.map((poi) {
+                      // Hotspot Pins on Map (sorted so active pin stays on top)
+                      ...sortedPois.map((poi) {
                         final isSelected = _selectedPoi?.id == poi.id;
                         final pinX = poi.dx * mapWidth;
                         final pinY = poi.dy * mapHeight;
 
                         return Positioned(
-                          left: pinX - 20,
-                          top: pinY - 40,
+                          left: pinX - 30,
+                          top: pinY - 50,
                           child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
                             onTap: () => _selectPoi(poi, viewportSize, mapWidth, mapHeight),
-                            child: _buildPinMarker(poi, isSelected),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8.0),
+                              child: _buildPinMarker(poi, isSelected, viewportSize),
+                            ),
                           ),
                         );
                       }),
@@ -231,7 +271,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
               child: _buildTopPlacesChipsBar(viewportSize, mapWidth, mapHeight),
             ),
 
-            // Unclipped Responsive Overlay Info Window
+            // Unclipped Spacious Responsive Info Window Callout attached to screen position of selected pin
             if (_selectedPoi != null && !_showSidePanel)
               _buildResponsiveOverlayInfoWindow(_selectedPoi!, viewportSize, mapWidth, mapHeight),
 
@@ -257,6 +297,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                     foregroundColor: Colors.white,
                     onPressed: () {
                       final currentScale = _transformationController.value.getMaxScaleOnAxis();
+                      // ignore: deprecated_member_use
                       final endMatrix = _transformationController.value.clone()..scale(1.4, 1.4, 1.0);
                       if (currentScale < 3.8) _animateMatrixTo(endMatrix);
                     },
@@ -277,7 +318,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                         width: viewportSize.width > 600 ? 380 : viewportSize.width * 0.88,
                         height: double.infinity,
                         color: const Color(0xFF0F172A),
-                        child: _buildRightSideDetailColumn(_selectedPoi!, viewportSize),
+                        child: _buildRightSideDetailColumn(_selectedPoi!, viewportSize, mapWidth, mapHeight),
                       ),
                     )
                   : const SizedBox.shrink(),
@@ -290,11 +331,13 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
 
   // Horizontal Quick Places Selector Bar at Top
   Widget _buildTopPlacesChipsBar(Size viewportSize, double mapWidth, double mapHeight) {
+    final bool isTablet = viewportSize.width >= 600;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: isTablet ? 8 : 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A).withValues(alpha: 0.85),
-        borderRadius: BorderRadius.circular(20),
+        color: const Color(0xFF0F172A).withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(24),
         border: Border.all(color: const Color(0xFF334155)),
         boxShadow: const [
           BoxShadow(color: Colors.black38, blurRadius: 10, offset: Offset(0, 4)),
@@ -309,13 +352,13 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
             ActionChip(
               avatar: Icon(
                 Icons.explore_rounded,
-                size: 16,
+                size: isTablet ? 18 : 16,
                 color: _selectedPoi == null ? Colors.tealAccent : Colors.white70,
               ),
               label: Text(
                 'All Places',
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: isTablet ? 13.5 : 12,
                   fontWeight: FontWeight.bold,
                   color: _selectedPoi == null ? Colors.tealAccent : Colors.white,
                 ),
@@ -338,13 +381,13 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                 child: ActionChip(
                   avatar: Icon(
                     poi.icon,
-                    size: 16,
+                    size: isTablet ? 18 : 16,
                     color: isSelected ? Colors.white : poi.color,
                   ),
                   label: Text(
                     poi.tag,
                     style: TextStyle(
-                      fontSize: 12,
+                      fontSize: isTablet ? 13.5 : 12,
                       fontWeight: FontWeight.bold,
                       color: isSelected ? Colors.white : Colors.white70,
                     ),
@@ -365,7 +408,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
     );
   }
 
-  // Unclipped Responsive Overlay Info Window anchored to current screen position of pin
+  // Unclipped Spacious Responsive Info Window Callout attached to screen position of selected pin
   Widget _buildResponsiveOverlayInfoWindow(
     MuseumPoi poi,
     Size viewportSize,
@@ -377,209 +420,265 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
     final double tx = matrix.storage[12];
     final double ty = matrix.storage[13];
 
-    // Compute center offset of map if centered
+    // Static offset of SizedBox(mapWidth, mapHeight) inside Center
     final double mapLeftOffset = (viewportSize.width - mapWidth) / 2;
     final double mapTopOffset = (viewportSize.height - mapHeight) / 2;
 
     final double pinX = poi.dx * mapWidth;
     final double pinY = poi.dy * mapHeight;
 
-    // Screen coordinates of the pin on top-level Stack
-    final double screenPinX = (pinX * scale) + tx + (mapLeftOffset * scale);
-    final double screenPinY = (pinY * scale) + ty + (mapTopOffset * scale);
+    // Precise screen coordinates of the selected pin tip on top-level Stack
+    final double screenPinX = mapLeftOffset + (pinX * scale) + tx;
+    final double screenPinY = mapTopOffset + (pinY * scale) + ty;
 
-    // Responsive sizing parameters
+    // Responsive Breakpoint Sizing (Enlarged Card Dimensions & Readable Typography)
     final bool isSmallPhone = viewportSize.width < 420;
-    final double cardWidth = math.min(viewportSize.width * 0.86, 320.0);
-    final double maxCardHeight = viewportSize.height * 0.38;
+    final bool isTablet = viewportSize.width >= 600;
 
-    // Center card horizontally over pin, clamped within safe margins
+    // Significantly Enlarged Card Width & Constraints
+    final double cardWidth = isTablet
+        ? math.min(viewportSize.width * 0.55, 430.0)
+        : (isSmallPhone ? math.min(viewportSize.width * 0.90, 320.0) : math.min(viewportSize.width * 0.88, 350.0));
+
+    final double maxCardHeight = isTablet ? viewportSize.height * 0.52 : viewportSize.height * 0.44;
+
+    // Prominent pointer arrow dimensions
+    final double arrowWidth = isTablet ? 26.0 : 22.0;
+    final double arrowHeight = isTablet ? 15.0 : 13.0;
+
+    // Horizontally center card over screenPinX, clamped safely inside screen edges
     double left = screenPinX - (cardWidth / 2);
     if (left < 14) left = 14;
     if (left + cardWidth > viewportSize.width - 14) {
       left = viewportSize.width - cardWidth - 14;
     }
 
-    // Determine vertical placement above or below pin
-    bool placeAbove = screenPinY - 180 > 70;
-    double top = placeAbove ? (screenPinY - 180) : (screenPinY + 28);
+    // Determine vertical placement: place card above pin tip if space allows
+    final double pinTopY = screenPinY - (isTablet ? 54.0 : 44.0);
+    bool placeAbove = pinTopY > (maxCardHeight + 70);
 
-    // Clamp top position inside viewport
-    if (top < 70) top = 70;
-    if (top > viewportSize.height - 170) top = viewportSize.height - 170;
+    // Pointer arrow offset relative to card left edge so callout arrow points EXACTLY to pin tip
+    double arrowLeftOffset = (screenPinX - left - (arrowWidth / 2)).clamp(18.0, cardWidth - 36.0);
 
     return Positioned(
       left: left,
-      top: top,
+      top: placeAbove ? null : (screenPinY + 10.0),
+      bottom: placeAbove ? (viewportSize.height - pinTopY + 2.0) : null,
       child: Material(
         color: Colors.transparent,
         child: SizedBox(
           width: cardWidth,
-          child: Container(
-            constraints: BoxConstraints(maxHeight: maxCardHeight),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: poi.color, width: 2),
-              boxShadow: [
-                BoxShadow(
-                  color: poi.color.withValues(alpha: 0.35),
-                  blurRadius: 16,
-                  spreadRadius: 2,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!placeAbove)
+                Padding(
+                  padding: EdgeInsets.only(left: arrowLeftOffset),
+                  child: CustomPaint(
+                    size: Size(arrowWidth, arrowHeight),
+                    painter: _InvertedTrianglePainter(color: poi.color),
+                  ),
                 ),
-                const BoxShadow(
-                  color: Colors.black54,
-                  blurRadius: 12,
-                  offset: Offset(0, 4),
-                )
-              ],
-            ),
-            padding: EdgeInsets.all(isSmallPhone ? 10.0 : 14.0),
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Top Row: Category tag, Icon & Close
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: poi.color.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(poi.icon, size: 12, color: poi.color),
-                            const SizedBox(width: 4),
-                            Text(
-                              poi.category.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: isSmallPhone ? 9 : 10,
-                                fontWeight: FontWeight.bold,
-                                color: poi.color,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: _dismissPoi,
-                        child: const Icon(Icons.close_rounded, size: 18, color: Colors.white60),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
 
-                  // Title of Place
-                  Text(
-                    poi.name,
-                    style: TextStyle(
-                      fontSize: isSmallPhone ? 13 : 15,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+              // Main Info Window Card with Spacious Layout
+              Container(
+                constraints: BoxConstraints(maxHeight: maxCardHeight),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B),
+                  borderRadius: BorderRadius.circular(isTablet ? 22 : 18),
+                  border: Border.all(color: poi.color, width: 2.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: poi.color.withValues(alpha: 0.45),
+                      blurRadius: isTablet ? 24 : 20,
+                      spreadRadius: 2,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-
-                  // Short Description Text
-                  Text(
-                    poi.shortDescription,
-                    style: TextStyle(
-                      fontSize: isSmallPhone ? 10.5 : 12,
-                      color: Colors.white70,
-                      height: 1.3,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Rating & Read More Action Button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    const BoxShadow(
+                      color: Colors.black54,
+                      blurRadius: 16,
+                      offset: Offset(0, 6),
+                    )
+                  ],
+                ),
+                padding: EdgeInsets.all(isTablet ? 20.0 : (isSmallPhone ? 12.0 : 16.0)),
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Top Row: Category tag, Icon & Close
                       Row(
                         children: [
-                          const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
-                          const SizedBox(width: 3),
-                          Text(
-                            '${poi.rating}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                              fontSize: isSmallPhone ? 11 : 12,
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isTablet ? 12 : 9,
+                              vertical: isTablet ? 5 : 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: poi.color.withValues(alpha: 0.22),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(poi.icon, size: isTablet ? 16 : 13, color: poi.color),
+                                const SizedBox(width: 5),
+                                Text(
+                                  poi.category.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: isTablet ? 12 : (isSmallPhone ? 10 : 11),
+                                    fontWeight: FontWeight.bold,
+                                    color: poi.color,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: () => _dismissPoi(viewportSize, mapWidth, mapHeight),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF0F172A),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(Icons.close_rounded, size: isTablet ? 22 : 18, color: Colors.white70),
                             ),
                           ),
                         ],
                       ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: poi.color,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.symmetric(
-                            horizontal: isSmallPhone ? 10 : 14,
-                            vertical: isSmallPhone ? 4 : 6,
-                          ),
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                      const SizedBox(height: 10),
+
+                      // Title
+                      Text(
+                        poi.name,
+                        style: TextStyle(
+                          fontSize: isTablet ? 20.0 : (isSmallPhone ? 15 : 17),
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: -0.3,
                         ),
-                        onPressed: _openSidePanel,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+
+                      // Short Description
+                      Text(
+                        poi.shortDescription,
+                        style: TextStyle(
+                          fontSize: isTablet ? 14.5 : (isSmallPhone ? 11.5 : 13),
+                          color: Colors.white70,
+                          height: 1.42,
+                        ),
+                        maxLines: isTablet ? 3 : 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Rating & Read More Action Button
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.star_rounded, color: Colors.amber, size: isTablet ? 20 : 16),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${poi.rating}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                  fontSize: isTablet ? 15 : (isSmallPhone ? 12 : 13),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '• ${poi.zone}',
+                                style: TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: isTablet ? 12 : 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: poi.color,
+                              foregroundColor: Colors.white,
+                              padding: EdgeInsets.symmetric(
+                                horizontal: isTablet ? 18 : (isSmallPhone ? 12 : 16),
+                                vertical: isTablet ? 10 : (isSmallPhone ? 6 : 8),
+                              ),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(isTablet ? 12 : 10),
+                              ),
+                            ),
+                            onPressed: () => _openSidePanel(viewportSize, mapWidth, mapHeight),
+                            label: Icon(Icons.arrow_forward_rounded, size: isTablet ? 16 : 14),
+                            icon: Text(
                               'Read More',
                               style: TextStyle(
-                                fontSize: isSmallPhone ? 10 : 11,
+                                fontSize: isTablet ? 13.0 : (isSmallPhone ? 11 : 12),
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            const SizedBox(width: 4),
-                            const Icon(Icons.arrow_forward_rounded, size: 13),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
+
+              if (placeAbove)
+                Padding(
+                  padding: EdgeInsets.only(left: arrowLeftOffset),
+                  child: CustomPaint(
+                    size: Size(arrowWidth, arrowHeight),
+                    painter: _TrianglePainter(color: poi.color),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildPinMarker(MuseumPoi poi, bool isSelected) {
+  Widget _buildPinMarker(MuseumPoi poi, bool isSelected, Size viewportSize) {
+    final bool isTablet = viewportSize.width >= 600;
+
     return AnimatedScale(
-      scale: isSelected ? 1.25 : 1.0,
-      duration: const Duration(milliseconds: 200),
+      scale: isSelected ? 1.35 : 1.0,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOutBack,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: EdgeInsets.symmetric(
+              horizontal: isTablet ? 12 : 10,
+              vertical: isTablet ? 6 : 5,
+            ),
             decoration: BoxDecoration(
               color: isSelected ? poi.color : const Color(0xFF1E293B),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(isTablet ? 16 : 14),
               border: Border.all(
                 color: isSelected ? Colors.white : poi.color,
-                width: 1.5,
+                width: isSelected ? 2.2 : 1.5,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: (isSelected ? poi.color : Colors.black).withValues(alpha: 0.4),
-                  blurRadius: 8,
+                  color: (isSelected ? poi.color : Colors.black).withValues(alpha: isSelected ? 0.65 : 0.4),
+                  blurRadius: isSelected ? 16 : 6,
+                  spreadRadius: isSelected ? 3 : 0,
                   offset: const Offset(0, 3),
                 )
               ],
@@ -589,14 +688,14 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
               children: [
                 Icon(
                   poi.icon,
-                  size: 14,
+                  size: isTablet ? 16 : 14,
                   color: isSelected ? Colors.white : poi.color,
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 5),
                 Text(
                   poi.tag,
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: isTablet ? 11.5 : 10,
                     fontWeight: FontWeight.bold,
                     color: isSelected ? Colors.white : Colors.white70,
                   ),
@@ -605,7 +704,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
             ),
           ),
           CustomPaint(
-            size: const Size(12, 8),
+            size: Size(isTablet ? 14 : 12, isTablet ? 9 : 8),
             painter: _TrianglePainter(
               color: isSelected ? poi.color : const Color(0xFF1E293B),
             ),
@@ -615,8 +714,14 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
     );
   }
 
-  Widget _buildRightSideDetailColumn(MuseumPoi poi, Size viewportSize) {
+  Widget _buildRightSideDetailColumn(
+    MuseumPoi poi,
+    Size viewportSize,
+    double mapWidth,
+    double mapHeight,
+  ) {
     final bool isSmallPhone = viewportSize.width < 400;
+    final bool isTablet = viewportSize.width >= 600;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
@@ -625,7 +730,10 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
           children: [
             // Top Bar with Close Button
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: EdgeInsets.symmetric(
+                horizontal: isTablet ? 20 : 14,
+                vertical: isTablet ? 14 : 10,
+              ),
               decoration: const BoxDecoration(
                 color: Color(0xFF1E293B),
                 border: Border(bottom: BorderSide(color: Color(0xFF334155))),
@@ -633,19 +741,19 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(6),
+                    padding: EdgeInsets.all(isTablet ? 8 : 6),
                     decoration: BoxDecoration(
                       color: poi.color.withValues(alpha: 0.2),
                       shape: BoxShape.circle,
                     ),
-                    child: Icon(poi.icon, size: 18, color: poi.color),
+                    child: Icon(poi.icon, size: isTablet ? 22 : 18, color: poi.color),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       poi.name,
                       style: TextStyle(
-                        fontSize: isSmallPhone ? 13 : 15,
+                        fontSize: isTablet ? 17 : (isSmallPhone ? 13 : 15),
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
@@ -654,8 +762,8 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                     ),
                   ),
                   IconButton(
-                    onPressed: _closeSidePanel,
-                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    onPressed: () => _closeSidePanel(viewportSize, mapWidth, mapHeight),
+                    icon: Icon(Icons.close_rounded, size: isTablet ? 24 : 20, color: Colors.white),
                     tooltip: 'Close details',
                   ),
                 ],
@@ -665,14 +773,14 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
             // Detailed Content Scrollable Column
             Expanded(
               child: SingleChildScrollView(
-                padding: EdgeInsets.all(isSmallPhone ? 14 : 18),
+                padding: EdgeInsets.all(isTablet ? 24 : (isSmallPhone ? 14 : 18)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // Header Banner Card
                     Container(
                       width: double.infinity,
-                      padding: EdgeInsets.all(isSmallPhone ? 14 : 18),
+                      padding: EdgeInsets.all(isTablet ? 22 : (isSmallPhone ? 14 : 18)),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
@@ -682,7 +790,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(isTablet ? 20 : 16),
                         border: Border.all(color: poi.color.withValues(alpha: 0.4)),
                       ),
                       child: Column(
@@ -691,7 +799,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                 decoration: BoxDecoration(
                                   color: poi.color,
                                   borderRadius: BorderRadius.circular(8),
@@ -699,30 +807,30 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                                 child: Text(
                                   poi.category,
                                   style: TextStyle(
-                                    fontSize: isSmallPhone ? 10 : 11,
+                                    fontSize: isTablet ? 12 : (isSmallPhone ? 10 : 11),
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,
                                   ),
                                 ),
                               ),
                               const Spacer(),
-                              const Icon(Icons.star_rounded, color: Colors.amber, size: 16),
+                              Icon(Icons.star_rounded, color: Colors.amber, size: isTablet ? 20 : 16),
                               const SizedBox(width: 4),
                               Text(
                                 '${poi.rating}',
                                 style: TextStyle(
-                                  fontSize: isSmallPhone ? 12 : 14,
+                                  fontSize: isTablet ? 15 : (isSmallPhone ? 12 : 14),
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
                                 ),
                               ),
                             ],
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 12),
                           Text(
                             poi.name,
                             style: TextStyle(
-                              fontSize: isSmallPhone ? 16 : 19,
+                              fontSize: isTablet ? 22 : (isSmallPhone ? 16 : 19),
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
                             ),
@@ -730,47 +838,13 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                           const SizedBox(height: 6),
                           Row(
                             children: [
-                              const Icon(Icons.location_on_rounded, size: 13, color: Colors.white60),
+                              Icon(Icons.location_on_rounded, size: isTablet ? 16 : 13, color: Colors.white60),
                               const SizedBox(width: 4),
                               Text(
                                 poi.zone,
                                 style: TextStyle(
-                                  fontSize: isSmallPhone ? 11 : 12,
+                                  fontSize: isTablet ? 13 : (isSmallPhone ? 11 : 12),
                                   color: Colors.white70,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Hours & Quick Info
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFF334155)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.access_time_filled_rounded, color: Colors.tealAccent, size: 18),
-                          const SizedBox(width: 10),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Operating Hours',
-                                style: TextStyle(fontSize: 10, color: Colors.white38),
-                              ),
-                              Text(
-                                poi.openHours,
-                                style: TextStyle(
-                                  fontSize: isSmallPhone ? 11.5 : 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
                                 ),
                               ),
                             ],
@@ -780,48 +854,82 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                     ),
                     const SizedBox(height: 18),
 
-                    // Detailed Description Header
-                    const Text(
-                      'Overview',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                    // Hours & Quick Info
+                    Container(
+                      padding: EdgeInsets.all(isTablet ? 16 : 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFF334155)),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      poi.fullDescription,
-                      style: TextStyle(
-                        fontSize: isSmallPhone ? 12 : 13.5,
-                        color: Colors.white70,
-                        height: 1.45,
+                      child: Row(
+                        children: [
+                          Icon(Icons.access_time_filled_rounded, color: Colors.tealAccent, size: isTablet ? 22 : 18),
+                          const SizedBox(width: 12),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Operating Hours',
+                                style: TextStyle(fontSize: isTablet ? 11.5 : 10, color: Colors.white38),
+                              ),
+                              Text(
+                                poi.openHours,
+                                style: TextStyle(
+                                  fontSize: isTablet ? 14.5 : (isSmallPhone ? 11.5 : 13),
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 20),
 
-                    // Key Highlights List
-                    const Text(
-                      'Key Highlights',
+                    // Detailed Description Header
+                    Text(
+                      'Overview',
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: isTablet ? 17 : 15,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 8),
+                    Text(
+                      poi.fullDescription,
+                      style: TextStyle(
+                        fontSize: isTablet ? 14.5 : (isSmallPhone ? 12 : 13.5),
+                        color: Colors.white70,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Key Highlights List
+                    Text(
+                      'Key Highlights',
+                      style: TextStyle(
+                        fontSize: isTablet ? 17 : 15,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     ...poi.highlights.map(
                       (item) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6.0),
+                        padding: const EdgeInsets.only(bottom: 8.0),
                         child: Row(
                           children: [
-                            Icon(Icons.check_circle_rounded, size: 16, color: poi.color),
-                            const SizedBox(width: 8),
+                            Icon(Icons.check_circle_rounded, size: isTablet ? 18 : 16, color: poi.color),
+                            const SizedBox(width: 10),
                             Expanded(
                               child: Text(
                                 item,
                                 style: TextStyle(
-                                  fontSize: isSmallPhone ? 11.5 : 12.5,
+                                  fontSize: isTablet ? 14 : (isSmallPhone ? 11.5 : 12.5),
                                   color: Colors.white70,
                                 ),
                               ),
@@ -830,7 +938,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 24),
 
                     // Action Buttons Row (Google Maps style)
                     Row(
@@ -840,9 +948,9 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                             style: ElevatedButton.styleFrom(
                               backgroundColor: poi.color,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                              padding: EdgeInsets.symmetric(vertical: isTablet ? 14 : 10),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
                             onPressed: () {
@@ -853,21 +961,24 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                                 ),
                               );
                             },
-                            icon: const Icon(Icons.directions_rounded, size: 16),
+                            icon: Icon(Icons.directions_rounded, size: isTablet ? 20 : 16),
                             label: Text(
                               'Directions',
-                              style: TextStyle(fontSize: isSmallPhone ? 11 : 13),
+                              style: TextStyle(fontSize: isTablet ? 14 : (isSmallPhone ? 11 : 13), fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 10),
                         OutlinedButton(
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.tealAccent,
                             side: const BorderSide(color: Colors.teal),
-                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 14),
+                            padding: EdgeInsets.symmetric(
+                              vertical: isTablet ? 14 : 10,
+                              horizontal: isTablet ? 18 : 14,
+                            ),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                           onPressed: () {
@@ -878,7 +989,7 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                               ),
                             );
                           },
-                          child: const Icon(Icons.bookmark_add_rounded, size: 18),
+                          child: Icon(Icons.bookmark_add_rounded, size: isTablet ? 22 : 18),
                         ),
                       ],
                     ),
@@ -933,4 +1044,24 @@ class _TrianglePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _TrianglePainter oldDelegate) => oldDelegate.color != color;
+}
+
+class _InvertedTrianglePainter extends CustomPainter {
+  final Color color;
+
+  _InvertedTrianglePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final path = Path()
+      ..moveTo(size.width / 2, 0)
+      ..lineTo(0, size.height)
+      ..lineTo(size.width, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _InvertedTrianglePainter oldDelegate) => oldDelegate.color != color;
 }

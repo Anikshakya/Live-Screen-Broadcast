@@ -1,11 +1,11 @@
-class FramePacket {
+class WebSocketFramePacket {
   final String type = 'frame';
   final String base64;
   final int width;
   final int height;
   final int timestamp;
 
-  FramePacket({
+  WebSocketFramePacket({
     required this.base64,
     required this.width,
     required this.height,
@@ -20,8 +20,8 @@ class FramePacket {
         'timestamp': timestamp,
       };
 
-  factory FramePacket.fromBase64Json(Map<String, dynamic> json) {
-    return FramePacket(
+  factory WebSocketFramePacket.fromBase64Json(Map<String, dynamic> json) {
+    return WebSocketFramePacket(
       base64: json['base64'] ?? '',
       width: json['width'] ?? 0,
       height: json['height'] ?? 0,
@@ -30,14 +30,14 @@ class FramePacket {
   }
 }
 
-class GesturePacket {
+class WebSocketGesturePacket {
   final String type = 'gesture';
   final String action; // 'down', 'move', 'up', 'cancel'
   final int pointerId;
   final double normalizedX;
   final double normalizedY;
 
-  GesturePacket({
+  WebSocketGesturePacket({
     required this.action,
     required this.pointerId,
     required this.normalizedX,
@@ -52,30 +52,12 @@ class GesturePacket {
         'normalizedY': normalizedY,
       };
 
-  factory GesturePacket.fromJson(Map<String, dynamic> json) {
-    return GesturePacket(
+  factory WebSocketGesturePacket.fromJson(Map<String, dynamic> json) {
+    return WebSocketGesturePacket(
       action: json['action'] ?? 'unknown',
       pointerId: json['pointerId'] ?? 0,
       normalizedX: (json['normalizedX'] ?? 0).toDouble(),
       normalizedY: (json['normalizedY'] ?? 0).toDouble(),
-    );
-  }
-}
-
-class SystemHandshakePacket {
-  final String type = 'handshake';
-  final String deviceName;
-
-  SystemHandshakePacket({required this.deviceName});
-
-  Map<String, dynamic> toJson() => {
-        'type': type,
-        'deviceName': deviceName,
-      };
-
-  factory SystemHandshakePacket.fromJson(Map<String, dynamic> json) {
-    return SystemHandshakePacket(
-      deviceName: json['deviceName'] ?? 'Unknown Device',
     );
   }
 }
