@@ -75,9 +75,13 @@ class MainMenu extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
-            const Text(
-              'Real-Time Screen Mirror',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+            const Flexible(
+              child: Text(
+                'Real-Time Screen Mirror',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+              ),
             ),
           ],
         ),
@@ -176,13 +180,15 @@ class MainMenu extends StatelessWidget {
                       size: 16,
                     ),
                     SizedBox(width: 6),
-                    Text(
-                      'WEBSOCKET (LOCAL WI-FI)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.tealAccent,
-                        letterSpacing: 1.0,
+                    Expanded(
+                      child: Text(
+                        'WEBSOCKET (LOCAL WI-FI)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.tealAccent,
+                          letterSpacing: 1.0,
+                        ),
                       ),
                     ),
                   ],
@@ -239,13 +245,15 @@ class MainMenu extends StatelessWidget {
                       size: 16,
                     ),
                     SizedBox(width: 6),
-                    Text(
-                      'FIREBASE (GLOBAL CLOUD)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.orangeAccent,
-                        letterSpacing: 1.0,
+                    Expanded(
+                      child: Text(
+                        'FIREBASE (GLOBAL CLOUD)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orangeAccent,
+                          letterSpacing: 1.0,
+                        ),
                       ),
                     ),
                   ],
@@ -342,16 +350,17 @@ class MainMenu extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
-                          Expanded(
-                            child: Text(
-                              title,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
                           ),
                           Container(

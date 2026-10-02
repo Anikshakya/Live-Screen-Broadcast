@@ -36,4 +36,17 @@ void main() {
 
   });
 
+  testWidgets('menu lays out at a narrow phone width', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(const MaterialApp(home: MainMenu()));
+
+    expect(find.text('Real-Time Screen Mirror'), findsOneWidget);
+    expect(find.text('WebSocket Host'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
 }

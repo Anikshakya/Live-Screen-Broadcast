@@ -2,23 +2,43 @@
 
 ## Tests
 
-Run the unit and widget tests, including tests in nested folders, with:
+Run the full unit and widget test suite from the project root:
 
 ```sh
-flutter test test
+flutter test -r expanded
 ```
 
-Pure protocol tests live in `test/unit/`; UI tests live in `test/widget/`.
-Device-backed integration tests are separate:
+Run only unit tests:
+
+```sh
+flutter test test/unit
+```
+
+Run only widget tests:
+
+```sh
+flutter test test/widget
+```
+
+Device-backed integration tests are separate. For one device, run:
 
 ```sh
 flutter test integration_test/app_test.dart -d <device-id>
-./run_two_devices.sh <host-device-id> <client-device-id> [websocket|firebase]
 ```
 
-A new Flutter project.
+For the two-device WebSocket test, run each command in a separate terminal:
 
-## Getting Started
+```sh
+# Host device
+flutter test integration_test/two_device_test.dart -d D13E8BB9-DE87-43F5-AB6B-0DB528567FD8 --dart-define=ROLE=host --dart-define=MODE=websocket
+```
+
+```sh
+# Client device
+flutter test integration_test/two_device_test.dart -d CCF02B22-AAEA-41AC-98AF-E33E68E2AED1 --dart-define=ROLE=client --dart-define=MODE=websocket --dart-define=HOST_IP=192.168.1.4
+```
+
+The two-device test can also be run with `./run_two_devices.sh <host-device-id> <client-device-id> [websocket|firebase]`.
 
 This project is a starting point for a Flutter application.
 
@@ -53,7 +73,6 @@ const clients = new Set();
 wss.on('connection', (ws) => {
   clients.add(ws);
   console.log(`[+] Device connected. Active devices: ${clients.size}`);
-
   // Broadcast events from App A to App B
   ws.on('message', (message) => {
     for (const client of clients) {

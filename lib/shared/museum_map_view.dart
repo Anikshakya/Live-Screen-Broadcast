@@ -581,10 +581,13 @@ class _MuseumMapViewState extends State<MuseumMapView> with TickerProviderStateM
                       const SizedBox(height: 14),
 
                       // Rating & Read More Action Button
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        runSpacing: 8,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.star_rounded, color: Colors.amber, size: isTablet ? 20 : 16),
                               const SizedBox(width: 4),

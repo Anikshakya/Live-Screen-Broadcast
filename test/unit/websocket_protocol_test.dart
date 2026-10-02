@@ -17,7 +17,13 @@ void main() {
           jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>;
       final decoded = WebSocketFramePacket.fromBase64Json(json);
 
-      expect(json['type'], 'frame');
+      expect(json, {
+        'type': 'frame',
+        'base64': 'aGVsbG8=',
+        'width': 640,
+        'height': 480,
+        'timestamp': 12345,
+      });
       expect(decoded.base64, 'aGVsbG8=');
       expect(decoded.width, 640);
       expect(decoded.height, 480);
@@ -46,7 +52,13 @@ void main() {
           jsonDecode(jsonEncode(original.toJson())) as Map<String, dynamic>;
       final decoded = WebSocketGesturePacket.fromJson(json);
 
-      expect(json['type'], 'gesture');
+      expect(json, {
+        'type': 'gesture',
+        'action': 'move',
+        'pointerId': 3,
+        'normalizedX': 0.25,
+        'normalizedY': 0.75,
+      });
       expect(decoded.action, 'move');
       expect(decoded.pointerId, 3);
       expect(decoded.normalizedX, 0.25);
@@ -60,6 +72,20 @@ void main() {
       expect(decoded.pointerId, 0);
       expect(decoded.normalizedX, 0);
       expect(decoded.normalizedY, 0);
+    });
+
+    test('decodes integer coordinates as doubles', () {
+      final decoded = WebSocketGesturePacket.fromJson({
+        'action': 'up',
+        'pointerId': 3,
+        'normalizedX': 1,
+        'normalizedY': 0,
+      });
+
+      expect(decoded.action, 'up');
+      expect(decoded.pointerId, 3);
+      expect(decoded.normalizedX, 1.0);
+      expect(decoded.normalizedY, 0.0);
     });
   });
 }
