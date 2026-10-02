@@ -1,5 +1,21 @@
 # mirror
 
+## Tests
+
+Run the unit and widget tests, including tests in nested folders, with:
+
+```sh
+flutter test test
+```
+
+Pure protocol tests live in `test/unit/`; UI tests live in `test/widget/`.
+Device-backed integration tests are separate:
+
+```sh
+flutter test integration_test/app_test.dart -d <device-id>
+./run_two_devices.sh <host-device-id> <client-device-id> [websocket|firebase]
+```
+
 A new Flutter project.
 
 ## Getting Started

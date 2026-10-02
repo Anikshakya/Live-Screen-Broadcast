@@ -51,6 +51,8 @@ class _WebSocketClientScreenState extends State<WebSocketClientScreen> {
 
   @override
   void dispose() {
+    _webSocketClient.onStatusChanged = null;
+    _webSocketClient.onRawFrameReceived = null;
     _webSocketClient.disconnect();
     _ipController.dispose();
     super.dispose();
